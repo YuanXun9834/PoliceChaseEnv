@@ -4,7 +4,6 @@ using System.Linq;
 using Unity.MLAgents;
 using UnityEngine.Serialization;
 
-
 public class GridArea : MonoBehaviour
 {
     [HideInInspector]
@@ -18,9 +17,11 @@ public class GridArea : MonoBehaviour
 
     [FormerlySerializedAs("PlusPref")] public GameObject GreenPlusPrefab;
     [FormerlySerializedAs("ExPref")] public GameObject RedExPrefab;
+    public GameObject YellowStarPrefab;
     GameObject[] m_Objects;
     public int numberOfPlus = 1;
     public int numberOfEx = 1;
+    public int numberOfYellow = 1;
 
     GameObject m_Plane;
     GameObject m_Sn;
@@ -36,7 +37,8 @@ public class GridArea : MonoBehaviour
     {
         m_ResetParams = Academy.Instance.EnvironmentParameters;
 
-        m_Objects = new[] { GreenPlusPrefab, RedExPrefab };
+        // Update objects array to include YellowStarPrefab
+        m_Objects = new[] { GreenPlusPrefab, RedExPrefab, YellowStarPrefab };
 
         m_AgentCam = transform.Find("agentCam").GetComponent<Camera>();
 
@@ -57,15 +59,22 @@ public class GridArea : MonoBehaviour
         transform.position = m_InitialPosition * (m_ResetParams.GetWithDefault("gridSize", 5f) + 1);
         var playersList = new List<int>();
 
+        // Add indices for each type of goal
         for (var i = 0; i < (int)m_ResetParams.GetWithDefault("numPlusGoals", numberOfPlus); i++)
         {
-            playersList.Add(0);
+            playersList.Add(0); // Green Plus
         }
 
         for (var i = 0; i < (int)m_ResetParams.GetWithDefault("numExGoals", numberOfEx); i++)
         {
-            playersList.Add(1);
+            playersList.Add(1); // Red Ex
         }
+
+        for (var i = 0; i < (int)m_ResetParams.GetWithDefault("numYellowGoals", numberOfYellow); i++)
+        {
+            playersList.Add(2); // Yellow Star
+        }
+
         players = playersList.ToArray();
 
         var gridSize = (int)m_ResetParams.GetWithDefault("gridSize", 5f);
@@ -86,33 +95,76 @@ public class GridArea : MonoBehaviour
 
     public void AreaReset()
     {
-        var gridSize = (int)m_ResetParams.GetWithDefault("gridSize", 5f);
-        foreach (var actor in actorObjs)
-        {
-            DestroyImmediate(actor);
-        }
-        SetEnvironment();
-
-        actorObjs.Clear();
-
-        var numbers = new HashSet<int>();
-        while (numbers.Count < players.Length + 1)
-        {
-            numbers.Add(Random.Range(0, gridSize * gridSize));
-        }
-        var numbersA = numbers.ToArray();
-
-        for (var i = 0; i < players.Length; i++)
-        {
-            var x = (numbersA[i]) / gridSize;
-            var y = (numbersA[i]) % gridSize;
-            var actorObj = Instantiate(m_Objects[players[i]], transform);
-            actorObj.transform.localPosition = new Vector3(x, -0.25f, y);
-            actorObjs.Add(actorObj);
-        }
-
-        var xA = (numbersA[players.Length]) / gridSize;
-        var yA = (numbersA[players.Length]) % gridSize;
-        trueAgent.transform.localPosition = new Vector3(xA, -0.25f, yA);
+        // Add delay before reset
+        StartCoroutine(DelayedReset());
     }
+
+private System.Collections.IEnumerator DelayedReset()
+{
+    yield return new WaitForSeconds(1.0f);
+
+    var gridSize = (int)m_ResetParams.GetWithDefault("gridSize", 5f);
+    foreach (var actor in actorObjs)
+    {
+        DestroyImmediate(actor);
+    }
+    SetEnvironment();
+
+    actorObjs.Clear();
+
+    // Create a list of all possible positions
+    List<Vector2Int> availablePositions = new List<Vector2Int>();
+    for (int x = 0; x < gridSize; x++)
+    {
+        for (int z = 0; z < gridSize; z++)
+        {
+            availablePositions.Add(new Vector2Int(x, z));
+        }
+    }
+
+    // Shuffle available positions
+    for (int i = availablePositions.Count - 1; i > 0; i--)
+    {
+        int j = Random.Range(0, i + 1);
+        var temp = availablePositions[i];
+        availablePositions[i] = availablePositions[j];
+        availablePositions[j] = temp;
+    }
+
+    // Place goals with correct positioning
+    int posIndex = 0;
+    for (var i = 0; i < players.Length; i++)
+    {
+        float safeBuffer = 0.5f;
+        var pos = availablePositions[posIndex++];
+        var actorObj = Instantiate(m_Objects[players[i]], transform);
+        // Ensure position is not too close to edges
+        Vector3 safePosition = new Vector3(
+            Mathf.Clamp(pos.x, safeBuffer, gridSize - safeBuffer),
+            -0.25f,
+            Mathf.Clamp(pos.y, safeBuffer, gridSize - safeBuffer)
+        );
+        actorObj.transform.localPosition = safePosition;
+        var movingGoal = actorObj.AddComponent<MovingGoal>();
+        movingGoal.Initialize(gridSize);
+        actorObjs.Add(actorObj);
+
+        switch (players[i])
+        {
+            case 0:
+                actorObj.tag = "plus";
+                break;
+            case 1:
+                actorObj.tag = "ex";
+                break;
+            case 2:
+                actorObj.tag = "star";
+                break;
+        }
+    }
+
+    // Place agent at integer coordinates
+    var agentPos = availablePositions[posIndex];
+    trueAgent.transform.localPosition = new Vector3(agentPos.x, -0.25f, agentPos.y);
+}
 }

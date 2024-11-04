@@ -26,6 +26,7 @@ public class GridAgent : Agent
     {
         GreenPlus,
         RedEx,
+        YellowStar,
     }
 
     // Visual representations of the agent. Both are blue on top, but different colors on the bottom - this
@@ -33,6 +34,7 @@ public class GridAgent : Agent
     // Only one is active at a time.
     public GameObject GreenBottom;
     public GameObject RedBottom;
+    public GameObject YellowBottom;
 
     GridGoal m_CurrentGoal;
 
@@ -46,10 +48,17 @@ public class GridAgent : Agent
                 case GridGoal.GreenPlus:
                     GreenBottom.SetActive(true);
                     RedBottom.SetActive(false);
+                    YellowBottom.SetActive(false);
                     break;
                 case GridGoal.RedEx:
                     GreenBottom.SetActive(false);
                     RedBottom.SetActive(true);
+                    YellowBottom.SetActive(false);
+                    break;
+                case GridGoal.YellowStar:
+                    GreenBottom.SetActive(false);
+                    RedBottom.SetActive(false);
+                    YellowBottom.SetActive(true);
                     break;
             }
             m_CurrentGoal = value;
@@ -65,6 +74,7 @@ public class GridAgent : Agent
     const int k_Down = 2;
     const int k_Left = 3;
     const int k_Right = 4;
+    private const float AGENT_SCALE = 0.3f; // Smaller agent scale
 
     EnvironmentParameters m_ResetParams;
 
@@ -72,6 +82,7 @@ public class GridAgent : Agent
     {
         m_GoalSensor = this.GetComponent<VectorSensorComponent>();
         m_ResetParams = Academy.Instance.EnvironmentParameters;
+        transform.localScale = Vector3.one * AGENT_SCALE;
     }
 
     public override void CollectObservations(VectorSensor sensor)
@@ -117,9 +128,7 @@ public class GridAgent : Agent
         }
     }
 
-    // to be implemented by the developer
     public override void OnActionReceived(ActionBuffers actionBuffers)
-
     {
         AddReward(-0.01f);
         var action = actionBuffers.DiscreteActions[0];
@@ -128,7 +137,6 @@ public class GridAgent : Agent
         switch (action)
         {
             case k_NoAction:
-                // do nothing
                 break;
             case k_Right:
                 targetPos = transform.position + new Vector3(1f, 0, 0f);
@@ -152,14 +160,22 @@ public class GridAgent : Agent
         {
             transform.position = targetPos;
 
-            if (hit.Where(col => col.gameObject.CompareTag("plus")).ToArray().Length == 1)
+            // Adjusted detection radius
+            var nearbyObjects = Physics.OverlapSphere(transform.position, 0.4f);
+            
+            if (nearbyObjects.Where(col => col.gameObject.CompareTag("plus")).ToArray().Length == 1)
             {
                 ProvideReward(GridGoal.GreenPlus);
                 EndEpisode();
             }
-            else if (hit.Where(col => col.gameObject.CompareTag("ex")).ToArray().Length == 1)
+            else if (nearbyObjects.Where(col => col.gameObject.CompareTag("ex")).ToArray().Length == 1)
             {
                 ProvideReward(GridGoal.RedEx);
+                EndEpisode();
+            }
+            else if (nearbyObjects.Where(col => col.gameObject.CompareTag("star")).ToArray().Length == 1)
+            {
+                ProvideReward(GridGoal.YellowStar);
                 EndEpisode();
             }
         }
@@ -169,7 +185,8 @@ public class GridAgent : Agent
     {
         if (CurrentGoal == hitObject)
         {
-            SetReward(1f);
+            // Increase reward for catching moving target
+            SetReward(2f);
         }
         else
         {

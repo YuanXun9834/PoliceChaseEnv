@@ -3,7 +3,11 @@ guid: 676658555cb2d4884aa8285062aab2a1
 MonoImporter:
   externalObjects: {}
   serializedVersion: 2
-  defaultReferences: []
+  defaultReferences:
+  - trueAgent: {instanceID: 0}
+  - GreenPlusPrefab: {instanceID: 0}
+  - RedExPrefab: {instanceID: 0}
+  - YellowStarPrefab: {instanceID: 0}
   executionOrder: 0
   icon: {instanceID: 0}
   userData: 
