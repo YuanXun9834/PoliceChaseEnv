@@ -1,10 +1,10 @@
-using System;
 using UnityEngine;
 using Unity.MLAgents;
 using Unity.MLAgents.Sensors;
 using Unity.MLAgents.Actuators;
 using Unity.MLAgents.SideChannels;
 using System.Collections.Generic;
+using System;
 
 public class GCRLLTLGridAgent : GridAgent
 {
@@ -12,148 +12,190 @@ public class GCRLLTLGridAgent : GridAgent
     private LTLGoalSideChannel ltlGoalChannel;
     private string currentLTLGoal;
     private Dictionary<string, float[]> zoneVectors;
+    private VectorSensorComponent stateSensor;
+    private VectorSensorComponent goalSensor;
     private const int ZONE_VECTOR_SIZE = 24;
-    
-    private bool episodeEnded = false;
+    private bool episodeEnded;
+    private float episodeReward;
+    private float[] currentGoalVector;
 
     public override void Initialize()
     {
         base.Initialize();
         
-        // Initialize LTL side channel
         ltlGoalChannel = new LTLGoalSideChannel();
         SideChannelManager.RegisterSideChannel(ltlGoalChannel);
         
-        // Initialize zone vectors
+        // Get references to sensors
+        var sensorComponents = GetComponents<VectorSensorComponent>();
+        foreach (var component in sensorComponents)
+        {
+            if (component.SensorName == "StateVector")
+                stateSensor = component;
+            else if (component.SensorName == "GoalVector")
+                goalSensor = component;
+        }
+        
         InitializeZoneVectors();
+        currentGoalVector = new float[ZONE_VECTOR_SIZE];
+        episodeEnded = false;
+        episodeReward = 0f;
+        
+        UpdateGoalVector();
     }
 
     private void InitializeZoneVectors()
     {
-        // Initialize dictionary to store zone vectors
-        zoneVectors = new Dictionary<string, float[]>();
-        
-        // Example zone vectors - modify based on your needs
-        zoneVectors["green"] = new float[ZONE_VECTOR_SIZE];  // Green Plus zone
-        zoneVectors["red"] = new float[ZONE_VECTOR_SIZE];    // Red Ex zone
-        zoneVectors["yellow"] = new float[ZONE_VECTOR_SIZE]; // Yellow Star zone
-        
-        // Set specific values for each zone vector
-        for (int i = 0; i < ZONE_VECTOR_SIZE; i++)
+        zoneVectors = new Dictionary<string, float[]>
         {
-            if (i < 8) zoneVectors["green"][i] = 1f;
-            else if (i < 16) zoneVectors["red"][i] = 1f;
-            else zoneVectors["yellow"][i] = 1f;
+            {"green", new float[ZONE_VECTOR_SIZE]},
+            {"red", new float[ZONE_VECTOR_SIZE]},
+            {"yellow", new float[ZONE_VECTOR_SIZE]}
+        };
+
+        // Initialize zone vectors
+        for (int i = 0; i < 8; i++)
+        {
+            int baseIdx = i * 3;
+            // Green plus
+            zoneVectors["green"][baseIdx] = 1f;
+            // Red ex
+            zoneVectors["red"][baseIdx + 1] = 1f;
+            // Yellow star
+            zoneVectors["yellow"][baseIdx + 2] = 1f;
+        }
+    }
+
+    private void UpdateGoalVector()
+    {
+        Array.Clear(currentGoalVector, 0, ZONE_VECTOR_SIZE);
+        
+        string goalType = CurrentGoal switch
+        {
+            GridGoal.GreenPlus => "green",
+            GridGoal.RedEx => "red",
+            GridGoal.YellowStar => "yellow",
+            _ => null
+        };
+
+        if (goalType != null && zoneVectors.ContainsKey(goalType))
+        {
+            Array.Copy(zoneVectors[goalType], currentGoalVector, ZONE_VECTOR_SIZE);
         }
     }
 
     public override void CollectObservations(VectorSensor sensor)
     {
-        // Add base observations (position, etc.)
-        base.CollectObservations(sensor);
+        if (stateSensor != null)
+            CollectStateObservations(stateSensor.GetSensor());
         
-        // Add agent's current position
+        if (goalSensor != null)
+            CollectGoalObservations(goalSensor.GetSensor());
+    }
+
+    private void CollectStateObservations(VectorSensor sensor)
+    {
+        // Agent position
         sensor.AddObservation(transform.localPosition.x);
         sensor.AddObservation(transform.localPosition.z);
         
-        // Add observations for each goal
-        foreach (var goal in area.actorObjs)
-        {
-            sensor.AddObservation(goal.transform.localPosition.x);
-            sensor.AddObservation(goal.transform.localPosition.z);
-            
-            // Add goal type
-            if (goal.CompareTag("plus")) sensor.AddObservation(1f);
-            else if (goal.CompareTag("ex")) sensor.AddObservation(2f);
-            else if (goal.CompareTag("star")) sensor.AddObservation(3f);
-        }
+        // Current goal one-hot encoding
+        sensor.AddObservation(CurrentGoal == GridGoal.GreenPlus ? 1f : 0f);
+        sensor.AddObservation(CurrentGoal == GridGoal.RedEx ? 1f : 0f);
+        sensor.AddObservation(CurrentGoal == GridGoal.YellowStar ? 1f : 0f);
         
-        // Add current goal vector based on LTL specification
-        float[] currentGoalVector = GetCurrentGoalVector();
-        if (currentGoalVector != null)
+        // Goals' positions and types
+        if (area != null && area.actorObjs != null)
         {
-            sensor.AddObservation(currentGoalVector);
+            foreach (var goal in area.actorObjs)
+            {
+                if (goal != null)
+                {
+                    sensor.AddObservation(goal.transform.localPosition.x);
+                    sensor.AddObservation(goal.transform.localPosition.z);
+                    
+                    float goalType = goal.CompareTag("plus") ? 1f : 
+                                   goal.CompareTag("ex") ? 2f : 
+                                   goal.CompareTag("star") ? 3f : 0f;
+                    sensor.AddObservation(goalType);
+                }
+            }
+        }
+
+        // Pad observations if needed
+        int currentObs = 5 + (area?.actorObjs?.Count * 3 ?? 0);
+        for (int i = currentObs; i < 14; i++)
+        {
+            sensor.AddObservation(0f);
         }
     }
 
-    private float[] GetCurrentGoalVector()
+    private void CollectGoalObservations(VectorSensor sensor)
     {
-        // Parse current LTL goal and return appropriate zone vector
-        if (string.IsNullOrEmpty(currentLTLGoal)) return null;
-        
-        if (currentLTLGoal.Contains("green")) return zoneVectors["green"];
-        if (currentLTLGoal.Contains("red")) return zoneVectors["red"];
-        if (currentLTLGoal.Contains("yellow")) return zoneVectors["yellow"];
-        
-        return null;
+        // Add current goal vector
+        sensor.AddObservation(currentGoalVector);
     }
 
     public override void OnActionReceived(ActionBuffers actionBuffers)
     {
-        base.OnActionReceived(actionBuffers);
+        if (episodeEnded)
+            return;
 
-        // Check if LTL goal has been updated
+        float beforeActionReward = GetCumulativeReward();
+        
+        base.OnActionReceived(actionBuffers);
+        
+        float afterActionReward = GetCumulativeReward();
+        episodeReward += (afterActionReward - beforeActionReward);
+
+        // Check LTL goal updates
         if (ltlGoalChannel.CurrentLTLGoal != currentLTLGoal)
         {
             currentLTLGoal = ltlGoalChannel.CurrentLTLGoal;
             UpdateGoalBasedOnLTL();
         }
 
-        // Handle episode ending
-        if (episodeEnded)
+        // Add info about goal achievement
+        var info = new Dictionary<string, object>
         {
-            base.EndEpisode();
-            episodeEnded = false;
-        }
+            {"goal_achieved", HasReachedGoal()},
+            {"current_goal", CurrentGoal.ToString()}
+        };
+    }
+
+    private bool HasReachedGoal()
+    {
+        // Implement based on your goal achievement criteria
+        // This should match your reward logic
+        return false; // Replace with actual implementation
     }
 
     private void UpdateGoalBasedOnLTL()
     {
-        if (string.IsNullOrEmpty(currentLTLGoal)) return;
+        if (string.IsNullOrEmpty(currentLTLGoal))
+            return;
 
-        // Parse LTL formula and update current goal
         if (currentLTLGoal.Contains("green"))
-        {
             CurrentGoal = GridGoal.GreenPlus;
-        }
         else if (currentLTLGoal.Contains("red"))
-        {
             CurrentGoal = GridGoal.RedEx;
-        }
         else if (currentLTLGoal.Contains("yellow"))
-        {
             CurrentGoal = GridGoal.YellowStar;
-        }
+
+        UpdateGoalVector();
     }
 
     public override void OnEpisodeBegin()
     {
         base.OnEpisodeBegin();
         episodeEnded = false;
-    }
-
-    // Instead of overriding EndEpisode, we'll set a flag and handle it in OnActionReceived
-    public void TriggerEpisodeEnd()
-    {
-        episodeEnded = true;
-    }
-
-    public Dictionary<string, object> GetStateInfo()
-    {
-        return new Dictionary<string, object>
-        {
-            {"position", transform.position},
-            {"current_goal", CurrentGoal},
-            {"ltl_goal", currentLTLGoal},
-            {"goal_vector", GetCurrentGoalVector()}
-        };
+        episodeReward = 0f;
+        UpdateGoalVector();
     }
 
     private void OnDestroy()
     {
         if (ltlGoalChannel != null)
-        {
             SideChannelManager.UnregisterSideChannel(ltlGoalChannel);
-        }
     }
 }
