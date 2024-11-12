@@ -18,10 +18,14 @@ public class GridArea : MonoBehaviour
     [FormerlySerializedAs("PlusPref")] public GameObject GreenPlusPrefab;
     [FormerlySerializedAs("ExPref")] public GameObject RedExPrefab;
     public GameObject YellowStarPrefab;
-    GameObject[] m_Objects;
-    public int numberOfPlus = 1;
-    public int numberOfEx = 1;
-    public int numberOfYellow = 1;
+
+    private const float AGENT_START_X = 1.0f;
+    private const float AGENT_START_Z = 1.0f;
+    
+    // Static positions for goals
+    private readonly Vector3 RED_POSITION = new Vector3(2.0f, -0.25f, 2.0f);
+    private readonly Vector3 YELLOW_POSITION = new Vector3(3.0f, -0.25f, 3.0f);
+    private readonly Vector3 GREEN_POSITION = new Vector3(4.0f, -0.25f, 4.0f);
 
     GameObject m_Plane;
     GameObject m_Sn;
@@ -30,54 +34,31 @@ public class GridArea : MonoBehaviour
     GameObject m_Sw;
 
     Vector3 m_InitialPosition;
-
     EnvironmentParameters m_ResetParams;
 
     public void Start()
     {
         m_ResetParams = Academy.Instance.EnvironmentParameters;
-
-        // Update objects array to include YellowStarPrefab
-        m_Objects = new[] { GreenPlusPrefab, RedExPrefab, YellowStarPrefab };
-
         m_AgentCam = transform.Find("agentCam").GetComponent<Camera>();
-
         actorObjs = new List<GameObject>();
 
         var sceneTransform = transform.Find("scene");
-
         m_Plane = sceneTransform.Find("Plane").gameObject;
         m_Sn = sceneTransform.Find("sN").gameObject;
         m_Ss = sceneTransform.Find("sS").gameObject;
         m_Sw = sceneTransform.Find("sW").gameObject;
         m_Se = sceneTransform.Find("sE").gameObject;
         m_InitialPosition = transform.position;
+
+        SetupEnvironment();
     }
 
-    void SetEnvironment()
+    void SetupEnvironment()
     {
-        transform.position = m_InitialPosition * (m_ResetParams.GetWithDefault("gridSize", 5f) + 1);
-        var playersList = new List<int>();
-
-        // Add indices for each type of goal
-        for (var i = 0; i < (int)m_ResetParams.GetWithDefault("numPlusGoals", numberOfPlus); i++)
-        {
-            playersList.Add(0); // Green Plus
-        }
-
-        for (var i = 0; i < (int)m_ResetParams.GetWithDefault("numExGoals", numberOfEx); i++)
-        {
-            playersList.Add(1); // Red Ex
-        }
-
-        for (var i = 0; i < (int)m_ResetParams.GetWithDefault("numYellowGoals", numberOfYellow); i++)
-        {
-            playersList.Add(2); // Yellow Star
-        }
-
-        players = playersList.ToArray();
-
         var gridSize = (int)m_ResetParams.GetWithDefault("gridSize", 5f);
+        transform.position = m_InitialPosition * (gridSize + 1);
+
+        // Configure environment boundaries
         m_Plane.transform.localScale = new Vector3(gridSize / 10.0f, 1f, gridSize / 10.0f);
         m_Plane.transform.localPosition = new Vector3((gridSize - 1) / 2f, -0.5f, (gridSize - 1) / 2f);
         m_Sn.transform.localScale = new Vector3(1, 1, gridSize + 2);
@@ -95,76 +76,37 @@ public class GridArea : MonoBehaviour
 
     public void AreaReset()
     {
-        // Add delay before reset
-        StartCoroutine(DelayedReset());
-    }
-
-private System.Collections.IEnumerator DelayedReset()
-{
-    yield return new WaitForSeconds(1.0f);
-
-    var gridSize = (int)m_ResetParams.GetWithDefault("gridSize", 5f);
-    foreach (var actor in actorObjs)
-    {
-        DestroyImmediate(actor);
-    }
-    SetEnvironment();
-
-    actorObjs.Clear();
-
-    // Create a list of all possible positions
-    List<Vector2Int> availablePositions = new List<Vector2Int>();
-    for (int x = 0; x < gridSize; x++)
-    {
-        for (int z = 0; z < gridSize; z++)
+        foreach (var actor in actorObjs)
         {
-            availablePositions.Add(new Vector2Int(x, z));
+            DestroyImmediate(actor);
         }
+        actorObjs.Clear();
+
+        // Place goals in fixed positions
+        PlaceStaticGoals();
+
+        // Place agent in starting position
+        trueAgent.transform.localPosition = new Vector3(AGENT_START_X, -0.25f, AGENT_START_Z);
     }
 
-    // Shuffle available positions
-    for (int i = availablePositions.Count - 1; i > 0; i--)
+    private void PlaceStaticGoals()
     {
-        int j = Random.Range(0, i + 1);
-        var temp = availablePositions[i];
-        availablePositions[i] = availablePositions[j];
-        availablePositions[j] = temp;
+        // Place Red Goal (Closest)
+        var redGoal = Instantiate(RedExPrefab, transform);
+        redGoal.transform.localPosition = RED_POSITION;
+        redGoal.tag = "ex";
+        actorObjs.Add(redGoal);
+
+        // Place Yellow Goal (Middle)
+        var yellowGoal = Instantiate(YellowStarPrefab, transform);
+        yellowGoal.transform.localPosition = YELLOW_POSITION;
+        yellowGoal.tag = "star";
+        actorObjs.Add(yellowGoal);
+
+        // Place Green Goal (Furthest)
+        var greenGoal = Instantiate(GreenPlusPrefab, transform);
+        greenGoal.transform.localPosition = GREEN_POSITION;
+        greenGoal.tag = "plus";
+        actorObjs.Add(greenGoal);
     }
-
-    // Place goals with correct positioning
-    int posIndex = 0;
-    for (var i = 0; i < players.Length; i++)
-    {
-        float safeBuffer = 0.5f;
-        var pos = availablePositions[posIndex++];
-        var actorObj = Instantiate(m_Objects[players[i]], transform);
-        // Ensure position is not too close to edges
-        Vector3 safePosition = new Vector3(
-            Mathf.Clamp(pos.x, safeBuffer, gridSize - safeBuffer),
-            -0.25f,
-            Mathf.Clamp(pos.y, safeBuffer, gridSize - safeBuffer)
-        );
-        actorObj.transform.localPosition = safePosition;
-        var movingGoal = actorObj.AddComponent<MovingGoal>();
-        movingGoal.Initialize(gridSize);
-        actorObjs.Add(actorObj);
-
-        switch (players[i])
-        {
-            case 0:
-                actorObj.tag = "plus";
-                break;
-            case 1:
-                actorObj.tag = "ex";
-                break;
-            case 2:
-                actorObj.tag = "star";
-                break;
-        }
-    }
-
-    // Place agent at integer coordinates
-    var agentPos = availablePositions[posIndex];
-    trueAgent.transform.localPosition = new Vector3(agentPos.x, -0.25f, agentPos.y);
-}
 }
