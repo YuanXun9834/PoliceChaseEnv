@@ -4,8 +4,8 @@ using Unity.MLAgents.Sensors;
 using Unity.MLAgents.Actuators;
 using Unity.MLAgents.SideChannels;
 using System.Collections.Generic;
-using System;
 using System.Linq;
+using System;
 
 public class GCRLLTLGridAgent : Agent
 {
@@ -21,11 +21,9 @@ public class GCRLLTLGridAgent : Agent
     
     [Header("Settings")]
     public bool maskActions = true;
-    [SerializeField] private float powerupSpeedMultiplier = 1.5f;
+    [SerializeField] private int maxSteps = 1000;
     
     // Constants
-    private const int ZONE_VECTOR_SIZE = 24;
-    private const int ACTION_SIZE = 5;
     private const float AGENT_SCALE = 0.3f;
     private const float GOAL_REACH_THRESHOLD = 0.4f;
     
@@ -39,18 +37,22 @@ public class GCRLLTLGridAgent : Agent
     // Components
     private LTLGoalSideChannel ltlGoalChannel;
     private VectorSensorComponent stateSensor;
-    private VectorSensorComponent goalSensor;
+    private EnvironmentParameters m_ResetParams;
     
     // State tracking
     private string currentLTLGoal;
-    private Dictionary<string, float[]> zoneVectors;
     private bool episodeEnded;
     private float episodeReward;
-    private HashSet<string> visitedZones;
-    private bool hasGreenPowerup;
     private float m_TimeSinceDecision;
-    private EnvironmentParameters m_ResetParams;
     private float currentMoveSpeed = 1.0f;
+    private bool hasGreenPowerup;
+    private const float powerupSpeedMultiplier = 1.5f;
+
+    // Goal sequence tracking
+    private Queue<GridGoal> targetGoalSequence;
+    private List<GridGoal> achievedGoals;
+    private GridGoal? currentTargetGoal;
+    private int currentStepCount;
 
     public enum GridGoal
     {
@@ -65,41 +67,18 @@ public class GCRLLTLGridAgent : Agent
         get { return m_CurrentGoal; }
         set
         {
-            switch (value)
-            {
-                case GridGoal.GreenPlus:
-                    GreenBottom.SetActive(true);
-                    RedBottom.SetActive(false);
-                    YellowBottom.SetActive(false);
-                    break;
-                case GridGoal.RedEx:
-                    GreenBottom.SetActive(false);
-                    RedBottom.SetActive(true);
-                    YellowBottom.SetActive(false);
-                    break;
-                case GridGoal.YellowStar:
-                    GreenBottom.SetActive(false);
-                    RedBottom.SetActive(false);
-                    YellowBottom.SetActive(true);
-                    break;
-            }
             m_CurrentGoal = value;
+            GreenBottom.SetActive(value == GridGoal.GreenPlus);
+            RedBottom.SetActive(value == GridGoal.RedEx);
+            YellowBottom.SetActive(value == GridGoal.YellowStar);
         }
     }
 
+
     public override void Initialize()
     {
-        // Get sensors
-        var sensors = GetComponents<VectorSensorComponent>();
-        foreach (var sensor in sensors)
-        {
-            if (sensor.SensorName == "StateSensor")
-                stateSensor = sensor;
-            else if (sensor.SensorName == "GoalSensor")
-                goalSensor = sensor;
-        }
+        base.Initialize();
 
-        // Initialize side channel if in training mode
         if (Academy.Instance.IsCommunicatorOn)
         {
             ltlGoalChannel = new LTLGoalSideChannel();
@@ -108,69 +87,55 @@ public class GCRLLTLGridAgent : Agent
 
         m_ResetParams = Academy.Instance.EnvironmentParameters;
         transform.localScale = Vector3.one * AGENT_SCALE;
-        
-        InitializeZoneVectors();
+
+        // Hide all bottom indicators initially
+        GreenBottom.SetActive(false);
+        RedBottom.SetActive(false);
+        YellowBottom.SetActive(false);
+
+        // Initialize the achievedGoals list
+        achievedGoals = new List<GridGoal>();
+
         ResetState();
-    }
-
-    private void InitializeZoneVectors()
-    {
-        zoneVectors = new Dictionary<string, float[]>();
-        float[] greenVector = new float[ZONE_VECTOR_SIZE];
-        float[] redVector = new float[ZONE_VECTOR_SIZE];
-        float[] yellowVector = new float[ZONE_VECTOR_SIZE];
-
-        for (int i = 0; i < 8; i++)
-        {
-            // Set RGB values for each zone type across 8 sets
-            greenVector[i * 3] = 1f;
-            redVector[i * 3 + 1] = 1f;
-            yellowVector[i * 3 + 2] = 1f;
-        }
-
-        zoneVectors["green"] = NormalizeVector(greenVector);
-        zoneVectors["red"] = NormalizeVector(redVector);
-        zoneVectors["yellow"] = NormalizeVector(yellowVector);
-    }
-
-    private float[] NormalizeVector(float[] vector)
-    {
-        float magnitude = Mathf.Sqrt(vector.Sum(x => x * x));
-        return magnitude > 0 ? vector.Select(x => x / magnitude).ToArray() : vector;
     }
 
     public override void CollectObservations(VectorSensor sensor)
     {
-        if (stateSensor != null)
+        // Agent position (2)
+        sensor.AddObservation(transform.localPosition.x);
+        sensor.AddObservation(transform.localPosition.z);
+        
+        // Current goal one-hot (3)
+        sensor.AddObservation(currentTargetGoal.HasValue && currentTargetGoal.Value == GridGoal.GreenPlus ? 1f : 0f);
+        sensor.AddObservation(currentTargetGoal.HasValue && currentTargetGoal.Value == GridGoal.RedEx ? 1f : 0f);
+        sensor.AddObservation(currentTargetGoal.HasValue && currentTargetGoal.Value == GridGoal.YellowStar ? 1f : 0f);
+        
+        // Powerup status (1)
+        sensor.AddObservation(hasGreenPowerup ? 1f : 0f);
+        
+        // Achieved goals (3)
+        sensor.AddObservation(achievedGoals.Contains(GridGoal.GreenPlus) ? 1f : 0f);
+        sensor.AddObservation(achievedGoals.Contains(GridGoal.RedEx) ? 1f : 0f);
+        sensor.AddObservation(achievedGoals.Contains(GridGoal.YellowStar) ? 1f : 0f);
+        
+        // Goal positions (6 = 3 goals × 2 coordinates)
+        if (area != null && area.actorObjs != null && area.actorObjs.Count > 0)
         {
-            // Agent position (2)
-            stateSensor.GetSensor().AddObservation(transform.localPosition.x);
-            stateSensor.GetSensor().AddObservation(transform.localPosition.z);
-            
-            // Current goal one-hot encoding (3)
-            stateSensor.GetSensor().AddObservation(CurrentGoal == GridGoal.GreenPlus ? 1f : 0f);
-            stateSensor.GetSensor().AddObservation(CurrentGoal == GridGoal.RedEx ? 1f : 0f);
-            stateSensor.GetSensor().AddObservation(CurrentGoal == GridGoal.YellowStar ? 1f : 0f);
-            
-            // Powerup status (1)
-            stateSensor.GetSensor().AddObservation(hasGreenPowerup ? 1f : 0f);
-            
-            // Visited zones (3)
-            stateSensor.GetSensor().AddObservation(visitedZones.Contains("green") ? 1f : 0f);
-            stateSensor.GetSensor().AddObservation(visitedZones.Contains("red") ? 1f : 0f);
-            stateSensor.GetSensor().AddObservation(visitedZones.Contains("yellow") ? 1f : 0f);
-        }
-
-        if (goalSensor != null)
-        {
-            string currentZone = GetCurrentZone();
-            float[] zoneVector = !string.IsNullOrEmpty(currentZone) && zoneVectors.ContainsKey(currentZone) 
-                ? zoneVectors[currentZone] 
-                : new float[ZONE_VECTOR_SIZE];
-                
-            foreach (float value in zoneVector)
+            foreach (var goal in area.actorObjs)
             {
-                goalSensor.GetSensor().AddObservation(value);
+                if (goal != null)
+                {
+                    sensor.AddObservation(goal.transform.localPosition.x);
+                    sensor.AddObservation(goal.transform.localPosition.z);
+                }
+            }
+        }
+        else
+        {
+            // Add zero values for missing goals
+            for (int i = 0; i < 6; i++)
+            {
+                sensor.AddObservation(0f);
             }
         }
     }
@@ -197,12 +162,19 @@ public class GCRLLTLGridAgent : Agent
     {
         if (episodeEnded) return;
 
+        currentStepCount++;
+        if (currentStepCount >= maxSteps)
+        {
+            SetReward(-1f);
+            EndEpisode();
+            return;
+        }
+
         float beforeActionReward = GetCumulativeReward();
         
         AddReward(-0.01f);  // Small negative reward for each action
         var action = actionBuffers.DiscreteActions[0];
         
-        // Calculate target position with speed multiplier
         var moveDistance = hasGreenPowerup ? currentMoveSpeed * powerupSpeedMultiplier : currentMoveSpeed;
         var targetPos = transform.position;
         switch (action)
@@ -213,7 +185,6 @@ public class GCRLLTLGridAgent : Agent
             case k_Down: targetPos += new Vector3(0f, 0, -moveDistance); break;
         }
 
-        // Check if move is valid and execute
         var hit = Physics.OverlapBox(targetPos, new Vector3(0.3f, 0.3f, 0.3f));
         if (hit.Where(col => col.gameObject.CompareTag("wall")).ToArray().Length == 0)
         {
@@ -224,7 +195,6 @@ public class GCRLLTLGridAgent : Agent
         float afterActionReward = GetCumulativeReward();
         episodeReward += (afterActionReward - beforeActionReward);
 
-        // Update goal if LTL goal has changed
         if (ltlGoalChannel != null && ltlGoalChannel.CurrentLTLGoal != currentLTLGoal)
         {
             currentLTLGoal = ltlGoalChannel.CurrentLTLGoal;
@@ -234,37 +204,55 @@ public class GCRLLTLGridAgent : Agent
 
     private void CheckGoalAchievement()
     {
+        if (targetGoalSequence == null || targetGoalSequence.Count == 0 || !currentTargetGoal.HasValue) return;
+
         var nearbyObjects = Physics.OverlapSphere(transform.position, GOAL_REACH_THRESHOLD);
         
-        // Check for green powerup first
+        // Check for green powerup
         if (!hasGreenPowerup && nearbyObjects.Any(col => col.gameObject.CompareTag("plus")))
         {
             hasGreenPowerup = true;
-            AddReward(2.0f); // Bonus for getting green first
+            AddReward(2.0f);
         }
 
-        // Check goal achievement
-        if (nearbyObjects.Any(col => col.gameObject.CompareTag("plus")))
-            ProvideReward(GridGoal.GreenPlus);
-        else if (nearbyObjects.Any(col => col.gameObject.CompareTag("ex")))
-            ProvideReward(GridGoal.RedEx);
-        else if (nearbyObjects.Any(col => col.gameObject.CompareTag("star")))
-            ProvideReward(GridGoal.YellowStar);
-    }
-
-    private void ProvideReward(GridGoal hitGoal)
-    {
-        if (CurrentGoal == hitGoal)
+        bool goalReached = false;
+        switch (currentTargetGoal.Value)  // Use .Value to access the non-nullable value
         {
+            case GridGoal.GreenPlus:
+                goalReached = nearbyObjects.Any(col => col.gameObject.CompareTag("plus"));
+                break;
+            case GridGoal.RedEx:
+                goalReached = nearbyObjects.Any(col => col.gameObject.CompareTag("ex"));
+                break;
+            case GridGoal.YellowStar:
+                goalReached = nearbyObjects.Any(col => col.gameObject.CompareTag("star"));
+                break;
+        }
+
+        if (goalReached)
+        {
+            achievedGoals.Add(currentTargetGoal.Value);
             float reward = hasGreenPowerup ? 3f : 1f;
-            SetReward(reward);
-            visitedZones.Add(GetCurrentZone());
+            AddReward(reward);
+
+            targetGoalSequence.Dequeue();
+            
+            if (targetGoalSequence.Count > 0)
+            {
+                currentTargetGoal = targetGoalSequence.Peek();
+                if (currentTargetGoal.HasValue)
+                {
+                    CurrentGoal = currentTargetGoal.Value;
+                }
+                Debug.Log($"Goal achieved! Moving to next goal: {currentTargetGoal}");
+            }
+            else
+            {
+                AddReward(5f);
+                Debug.Log("All goals achieved in correct sequence!");
+                EndEpisode();
+            }
         }
-        else
-        {
-            SetReward(-1f);
-        }
-        EndEpisode();
     }
 
     public override void OnEpisodeBegin()
@@ -272,11 +260,20 @@ public class GCRLLTLGridAgent : Agent
         area.AreaReset();
         ResetState();
         
-        // Set random goal if no specific goal is set
-        if (string.IsNullOrEmpty(currentLTLGoal))
+        if (targetGoalSequence != null && targetGoalSequence.Count > 0)
         {
-            Array values = Enum.GetValues(typeof(GridGoal));
-            CurrentGoal = (GridGoal)values.GetValue(UnityEngine.Random.Range(0, values.Length));
+            currentTargetGoal = targetGoalSequence.Peek();
+            if (currentTargetGoal.HasValue)
+            {
+                CurrentGoal = currentTargetGoal.Value;
+            }
+        }
+        else
+        {
+            currentTargetGoal = null;
+            GreenBottom.SetActive(false);
+            RedBottom.SetActive(false);
+            YellowBottom.SetActive(false);
         }
     }
 
@@ -284,20 +281,24 @@ public class GCRLLTLGridAgent : Agent
     {
         episodeEnded = false;
         episodeReward = 0f;
-        visitedZones = new HashSet<string>();
         hasGreenPowerup = false;
         currentMoveSpeed = 1.0f;
         m_TimeSinceDecision = 0f;
+        currentStepCount = 0;
+        if (achievedGoals != null) achievedGoals.Clear();
+        currentTargetGoal = null;
     }
 
-    private string GetCurrentZone()
+    public void SetTargetSequence(IEnumerable<GridGoal> sequence)
     {
-        switch (CurrentGoal)
+        if (sequence == null) return;
+        
+        targetGoalSequence = new Queue<GridGoal>(sequence);
+        if (targetGoalSequence.Count > 0)
         {
-            case GridGoal.GreenPlus: return "green";
-            case GridGoal.RedEx: return "red";
-            case GridGoal.YellowStar: return "yellow";
-            default: return "";
+            currentTargetGoal = targetGoalSequence.Peek();
+            CurrentGoal = currentTargetGoal.Value;
+            Debug.Log($"Set new target sequence with {targetGoalSequence.Count} goals");
         }
     }
 

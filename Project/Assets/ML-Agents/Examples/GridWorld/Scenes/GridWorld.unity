@@ -380,9 +380,7 @@ GameObject:
   - component: {fileID: 125487788}
   - component: {fileID: 125487790}
   - component: {fileID: 125487791}
-  - component: {fileID: 125487792}
   - component: {fileID: 125487794}
-  - component: {fileID: 125487795}
   m_Layer: 8
   m_Name: RenderTextureAgent
   m_TagString: agent
@@ -451,7 +449,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   m_BrainParameters:
-    VectorObservationSize: 38
+    VectorObservationSize: 15
     NumStackedVectorObservations: 1
     m_ActionSpec:
       m_NumContinuousActions: 0
@@ -486,22 +484,6 @@ MonoBehaviour:
   m_Grayscale: 0
   m_ObservationStacks: 1
   m_Compression: 1
---- !u!114 &125487792
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 125487785}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 38b7cc1f5819445aa85e9a9b054552dc, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  m_SensorName: StateSensor
-  m_ObservationSize: 14
-  m_ObservationType: 0
-  m_ObservationStacks: 1
 --- !u!114 &125487794
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -525,22 +507,7 @@ MonoBehaviour:
   RedBottom: {fileID: 1559803814}
   YellowBottom: {fileID: 764849642}
   maskActions: 1
---- !u!114 &125487795
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 125487785}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 38b7cc1f5819445aa85e9a9b054552dc, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  m_SensorName: GoalSensor
-  m_ObservationSize: 24
-  m_ObservationType: 0
-  m_ObservationStacks: 1
+  maxSteps: 1000
 --- !u!1 &299607777
 GameObject:
   m_ObjectHideFlags: 0
@@ -3067,7 +3034,6 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   actorObjs: []
-  players: 
   trueAgent: {fileID: 125487785}
   GreenPlusPrefab: {fileID: 1508142483324970, guid: 1ec4e4e96e7514d45b7ebc3ba5a9a481,
     type: 3}
@@ -3075,9 +3041,6 @@ MonoBehaviour:
     type: 3}
   YellowStarPrefab: {fileID: 1508142483324970, guid: d3b55590d63322fb584dc921f064c039,
     type: 3}
-  numberOfPlus: 1
-  numberOfEx: 1
-  numberOfYellow: 1
 --- !u!4 &1795599558
 Transform:
   m_ObjectHideFlags: 0

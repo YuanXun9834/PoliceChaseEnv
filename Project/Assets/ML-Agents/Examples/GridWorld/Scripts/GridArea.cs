@@ -1,6 +1,5 @@
 using System.Collections.Generic;
 using UnityEngine;
-using System.Linq;
 using Unity.MLAgents;
 using UnityEngine.Serialization;
 
@@ -8,25 +7,22 @@ public class GridArea : MonoBehaviour
 {
     [HideInInspector]
     public List<GameObject> actorObjs;
-    [HideInInspector]
-    public int[] players;
-
+    
     public GameObject trueAgent;
-
     Camera m_AgentCam;
 
     [FormerlySerializedAs("PlusPref")] public GameObject GreenPlusPrefab;
     [FormerlySerializedAs("ExPref")] public GameObject RedExPrefab;
     public GameObject YellowStarPrefab;
 
-    private const float AGENT_START_X = 1.0f;
-    private const float AGENT_START_Z = 1.0f;
+    private const float GOAL_SCALE = 0.25f;
     
-    // Static positions for goals
-    private readonly Vector3 RED_POSITION = new Vector3(2.0f, -0.25f, 2.0f);
-    private readonly Vector3 YELLOW_POSITION = new Vector3(3.0f, -0.25f, 3.0f);
-    private readonly Vector3 GREEN_POSITION = new Vector3(4.0f, -0.25f, 4.0f);
-
+    // Fixed positions - no randomization
+    private readonly Vector3 AGENT_START = new Vector3(1.0f, -0.25f, 1.0f);
+    private readonly Vector3 RED_POSITION = new Vector3(2.0f, -0.25f, 2.0f);     // Closest
+    private readonly Vector3 YELLOW_POSITION = new Vector3(3.0f, -0.25f, 3.0f);  // Middle
+    private readonly Vector3 GREEN_POSITION = new Vector3(4.0f, -0.25f, 3.5f);   // Furthest
+    
     GameObject m_Plane;
     GameObject m_Sn;
     GameObject m_Ss;
@@ -35,6 +31,7 @@ public class GridArea : MonoBehaviour
 
     Vector3 m_InitialPosition;
     EnvironmentParameters m_ResetParams;
+    private int gridSize;
 
     public void Start()
     {
@@ -55,7 +52,7 @@ public class GridArea : MonoBehaviour
 
     void SetupEnvironment()
     {
-        var gridSize = (int)m_ResetParams.GetWithDefault("gridSize", 5f);
+        gridSize = (int)m_ResetParams.GetWithDefault("gridSize", 5f);
         transform.position = m_InitialPosition * (gridSize + 1);
 
         // Configure environment boundaries
@@ -82,11 +79,10 @@ public class GridArea : MonoBehaviour
         }
         actorObjs.Clear();
 
-        // Place goals in fixed positions
         PlaceStaticGoals();
-
-        // Place agent in starting position
-        trueAgent.transform.localPosition = new Vector3(AGENT_START_X, -0.25f, AGENT_START_Z);
+        
+        // Place agent in fixed starting position
+        trueAgent.transform.localPosition = AGENT_START;
     }
 
     private void PlaceStaticGoals()
@@ -94,18 +90,21 @@ public class GridArea : MonoBehaviour
         // Place Red Goal (Closest)
         var redGoal = Instantiate(RedExPrefab, transform);
         redGoal.transform.localPosition = RED_POSITION;
+        redGoal.transform.localScale = Vector3.one * GOAL_SCALE;
         redGoal.tag = "ex";
         actorObjs.Add(redGoal);
 
         // Place Yellow Goal (Middle)
         var yellowGoal = Instantiate(YellowStarPrefab, transform);
         yellowGoal.transform.localPosition = YELLOW_POSITION;
+        yellowGoal.transform.localScale = Vector3.one * GOAL_SCALE;
         yellowGoal.tag = "star";
         actorObjs.Add(yellowGoal);
 
         // Place Green Goal (Furthest)
         var greenGoal = Instantiate(GreenPlusPrefab, transform);
         greenGoal.transform.localPosition = GREEN_POSITION;
+        greenGoal.transform.localScale = Vector3.one * GOAL_SCALE;
         greenGoal.tag = "plus";
         actorObjs.Add(greenGoal);
     }
