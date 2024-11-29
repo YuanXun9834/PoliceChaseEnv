@@ -499,15 +499,17 @@ MonoBehaviour:
   agentParameters:
     maxStep: 0
   hasUpgradedFromAgentParameters: 1
-  MaxStep: 100
+  MaxStep: 1000
   area: {fileID: 1795599557}
-  timeBetweenDecisionsAtInference: 0.15
+  timeBetweenDecisionsAtInference: 0.2
   renderCamera: {fileID: 797520692}
   GreenBottom: {fileID: 299607777}
   RedBottom: {fileID: 1559803814}
   YellowBottom: {fileID: 764849642}
   maskActions: 1
   maxSteps: 1000
+  baseMovementScale: 0.25
+  powerupSpeedMultiplier: 2
 --- !u!1 &299607777
 GameObject:
   m_ObjectHideFlags: 0
@@ -517,9 +519,9 @@ GameObject:
   serializedVersion: 6
   m_Component:
   - component: {fileID: 299607778}
-  m_Layer: 10
+  m_Layer: 0
   m_Name: Bottom-Green
-  m_TagString: plus
+  m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
@@ -1471,9 +1473,9 @@ GameObject:
   serializedVersion: 6
   m_Component:
   - component: {fileID: 764849643}
-  m_Layer: 10
+  m_Layer: 0
   m_Name: Bottom-Yellow
-  m_TagString: star
+  m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
@@ -2663,9 +2665,9 @@ GameObject:
   serializedVersion: 6
   m_Component:
   - component: {fileID: 1559803815}
-  m_Layer: 10
+  m_Layer: 0
   m_Name: Bottom-Red
-  m_TagString: ex
+  m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0

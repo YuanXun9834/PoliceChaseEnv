@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using UnityEngine;
 using Unity.MLAgents;
+using System.Linq; 
 using UnityEngine.Serialization;
 
 public class GridArea : MonoBehaviour
@@ -18,10 +19,13 @@ public class GridArea : MonoBehaviour
     private const float GOAL_SCALE = 0.25f;
     
     // Fixed positions - no randomization
-    private readonly Vector3 AGENT_START = new Vector3(1.0f, -0.25f, 1.0f);
-    private readonly Vector3 RED_POSITION = new Vector3(2.0f, -0.25f, 2.0f);     // Closest
-    private readonly Vector3 YELLOW_POSITION = new Vector3(3.0f, -0.25f, 3.0f);  // Middle
-    private readonly Vector3 GREEN_POSITION = new Vector3(4.0f, -0.25f, 3.5f);   // Furthest
+    // Update position constants for equidistant goals
+    private readonly Vector3 AGENT_START = new Vector3(2.5f, -0.25f, 2.5f);  // Center
+    
+    // Equidistant positions in a triangle formation around center
+    private readonly Vector3 RED_POSITION = new Vector3(1.0f, -0.25f, 1.0f);      // Bottom left
+    private readonly Vector3 GREEN_POSITION = new Vector3(4.0f, -0.25f, 1.0f);    // Bottom right
+    private readonly Vector3 YELLOW_POSITION = new Vector3(2.5f, -0.25f, 4.0f);
     
     GameObject m_Plane;
     GameObject m_Sn;
@@ -107,5 +111,63 @@ public class GridArea : MonoBehaviour
         greenGoal.transform.localScale = Vector3.one * GOAL_SCALE;
         greenGoal.tag = "plus";
         actorObjs.Add(greenGoal);
+    }
+    
+    public void DespawnGoal(string goalTag)
+    {
+        Debug.Log($"Attempting to despawn goal with tag: {goalTag}");
+        
+        // Find and remove the goal
+        var goalsToRemove = actorObjs.Where(obj => obj != null && obj.CompareTag(goalTag)).ToList();
+        foreach (var goal in goalsToRemove)
+        {
+            Debug.Log($"Despawning goal at position: {goal.transform.position}");
+            actorObjs.Remove(goal);
+            DestroyImmediate(goal);
+        }
+        
+        // Verify removal
+        var remainingGoals = actorObjs.Count(obj => obj != null && obj.CompareTag(goalTag));
+        Debug.Log($"Remaining goals with tag {goalTag}: {remainingGoals}");
+    }
+
+    public bool IsGoalPresent(string goalTag)
+    {
+        return actorObjs.Any(obj => obj != null && obj.CompareTag(goalTag));
+    }
+
+    public void RespawnGoal(string goalTag)
+    {
+        // Check if goal already exists
+        if (actorObjs.Any(obj => obj.CompareTag(goalTag)))
+            return;
+
+        GameObject prefab = null;
+        Vector3 position = Vector3.zero;
+        
+        switch (goalTag)
+        {
+            case "plus":
+                prefab = GreenPlusPrefab;
+                position = GREEN_POSITION;
+                break;
+            case "ex":
+                prefab = RedExPrefab;
+                position = RED_POSITION;
+                break;
+            case "star":
+                prefab = YellowStarPrefab;
+                position = YELLOW_POSITION;
+                break;
+        }
+
+        if (prefab != null)
+        {
+            var goal = Instantiate(prefab, transform);
+            goal.transform.localPosition = position;
+            goal.transform.localScale = Vector3.one * GOAL_SCALE;
+            goal.tag = goalTag;
+            actorObjs.Add(goal);
+        }
     }
 }

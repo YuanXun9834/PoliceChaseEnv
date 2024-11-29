@@ -552,7 +552,6 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   actorObjs: []
-  players: 
   trueAgent: {fileID: 1488387672112076}
   GreenPlusPrefab: {fileID: 1508142483324970, guid: 1ec4e4e96e7514d45b7ebc3ba5a9a481,
     type: 3}
@@ -560,9 +559,6 @@ MonoBehaviour:
     type: 3}
   YellowStarPrefab: {fileID: 1508142483324970, guid: d3b55590d63322fb584dc921f064c039,
     type: 3}
-  numberOfPlus: 1
-  numberOfEx: 1
-  numberOfYellow: 1
 --- !u!1 &1656910849934022
 GameObject:
   m_ObjectHideFlags: 0
@@ -2043,7 +2039,7 @@ GameObject:
   serializedVersion: 6
   m_Component:
   - component: {fileID: 4067739522719805371}
-  m_Layer: 8
+  m_Layer: 0
   m_Name: Bottom-Red
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -2183,7 +2179,7 @@ GameObject:
   serializedVersion: 6
   m_Component:
   - component: {fileID: 8584118200143106639}
-  m_Layer: 8
+  m_Layer: 0
   m_Name: Bottom-Yellow
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -2568,7 +2564,7 @@ GameObject:
   serializedVersion: 6
   m_Component:
   - component: {fileID: 4973675812163709526}
-  m_Layer: 8
+  m_Layer: 0
   m_Name: Bottom-Green
   m_TagString: Untagged
   m_Icon: {fileID: 0}
